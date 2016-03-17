@@ -82,7 +82,7 @@ void LineFollower::errorContour(int im)
         
 }
 
-void LineFollower::start(Mat imgCV, bool left, bool white, int errThresh)
+bool LineFollower::start(Mat imgCV, UART uart, bool left, bool white, int errThresh)
 {  
     
     // create roi
@@ -170,6 +170,10 @@ void LineFollower::start(Mat imgCV, bool left, bool white, int errThresh)
 	cout << "\n### REACHED END OF LINE ### ( or made an error :-) )" << endl;
 	endOfLine = 0;
 	
+	uart.setMissionStart(false);
+	uart.send((char *)"998\n");
+	return false;
+	
 	//TODO stop run!!
     }
     
@@ -212,10 +216,12 @@ void LineFollower::start(Mat imgCV, bool left, bool white, int errThresh)
     
     
     // send calculated angle to regbot
-    UART uart;
+    
     char angleStr[10];
     snprintf (angleStr,10,"%d\n",angle);
     uart.send(angleStr);
     
     imgNumber += 1;
+    
+    return true;
 }

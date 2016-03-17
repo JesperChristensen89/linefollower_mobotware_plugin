@@ -13,7 +13,7 @@
 
 class LineFollower{
 public:
-    void start(cv::Mat, bool turnLeft, bool black, int errThresh);
+    bool start(cv::Mat, UART, bool, bool, int);
 private:
     void errorMatch(int, int);
     void errorContour(int);

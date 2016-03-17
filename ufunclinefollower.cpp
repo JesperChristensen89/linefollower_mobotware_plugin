@@ -42,6 +42,24 @@
 
 using namespace cv;
 
+UART uart;
+bool isRegBotRunning;
+
+  
+void *uartReceiver(void * threadid)
+{
+
+  while (isRegBotRunning)
+  {
+    uart.receive();
+  }
+
+  pthread_exit(NULL);
+  
+    
+}
+
+
 /**
 Vision Based Line Follower designed for regbots
 @author Jesper H. Christensen
@@ -50,11 +68,15 @@ class UFuncLineFollower : public UFunctionCamBase
 { // NAMING convention recommend that the main plugin function class
   // starts with UFunc followed by
   // a descriptive extension for this specific plugin
+
+  
 public:
   
   LineFollower linefollower;
-  UART uart;
+
  
+  
+  
   /**
   Constructor */
   UFuncLineFollower()
@@ -63,12 +85,19 @@ public:
     // create global variables
     createBaseVar();
     	
-
-
     uart.init();
     
     uart.send((char *)"M=8\n");
-    uart.send((char *)"start\n");
+    
+    int threadOK;
+    
+    pthread_t receiverThread;
+    threadOK = pthread_create(&receiverThread, NULL, uartReceiver, (void*)&receiverThread);
+    if (threadOK != 0)
+    {
+      exit(EXIT_FAILURE);
+    }
+    
   };
   /**
   Destructor - to delete the resource (etc) when finished */
@@ -84,7 +113,6 @@ public:
     const int MRL = 2000;
     char reply[MRL];
     bool ask4help;
-    bool stopRunning;
     const int MVL = 50;
     char val[MVL];
     int camDevice = -1;
@@ -105,7 +133,6 @@ public:
     ask4help = msg->tag.getAttValue("help", val, MVL);
     if (not ask4help)
     { // get all other parameters
-      stopRunning = msg->tag.getAttValue("stop",val,MVL);
       msg->tag.getAttValueInt("device", &camDevice);
       imgPoolIsSet = msg->tag.getAttValueInt("img", &imgPoolNum);
       msg->tag.getAttValueBool("white", &white, true);
@@ -131,13 +158,6 @@ public:
       sendInfo("done");
       result = true;
      
-    }
-    else if (stopRunning)
-    {
-      UART u;
-      u.send((char *)"998\n");
-      
-      result = true;
     }
     else
     { 
@@ -179,43 +199,19 @@ public:
       { // there is an image, make the required ball analysis
 	
 
-	
-	img->toBW(img);
-    
-	cv::Mat imgCV = cv::cvarrToMat(img->cvArr());
-	
-	linefollower.start(imgCV,left,white,errThresh);
-	
+	if (uart.getMissionStart())
+	{
+	    
+	  img->toBW(img);
+      
+	  cv::Mat imgCV = cv::cvarrToMat(img->cvArr());
+	  
+	  isRegBotRunning = linefollower.start(imgCV, uart, left,white,errThresh);
+	}
+	  
 	//uart.send((char *)"998\n");
 	
-	
-	/*
-        //result = findBall(cam, img, debug, gotBlue);
-        if (smrcl)
-        { // format for MRC
-          snprintf(reply, MRL, "<vision vis1=\"%d\" vis2=\"%g\" vis3=\"%g\" vis4=\"%d\"/>\n",
-                                         result, getPos().x, getPos().y, getCnt());
-          sendMsg(msg, reply);
-        }
-        else if (not result)
-        { // did not find any balls in image - with a reasonable size
-          snprintf(reply, MRL, "<%s cnt=\"%d\"/>\n", msg->tag.getTagName(), getCnt());
-          sendMsg(msg, reply);
-        }
-        else
-        { // send XML open tag with ball count as attribute
-          snprintf(reply, MRL, "<%s cnt=\"%d\">\n", msg->tag.getTagName(), getCnt());
-          sendMsg(msg, reply);
-          // code position of the ball and send
-          tag.codePosition(getPos(), reply, MRL, "ball");
-          result = sendMsg(msg, reply);
-          // send XML close tag
-          snprintf(reply, MRL, "</%s>\n", msg->tag.getTagName());
-          sendMsg(msg, reply);
-        }
-        */
       }
-      
       else
       {
         snprintf(reply, MRL, "failed, got image %s, got camera %d %s\n",
@@ -229,6 +225,8 @@ public:
     return result;
   }
   
+  
+  
 
  
 
@@ -240,7 +238,11 @@ protected:
   Make the variables that will be available to other plugins */
   void createBaseVar()
   {
-    varPoolImg = addVar("poolImg", 45.0, "d", "(r/w) first image pool number to use");
+    varPoolImg  = addVar("poolImg", 45.0, "d", "(r/w) first image pool number to use");
+    //varLeft     = addVar("left", false, "b", "turn direction");
+    //varWhite    = addVar("white", false, "b", "Line color to follow");
+    //varErrThresh= addVar("errThresh", 4, "i", "Errors to make before exiting");
+    
   }
   
 
@@ -250,9 +252,11 @@ private:
   int imgSizeH;
   /// size of source image in pixels
   int imgSizeW;
-  /// pointer to limiting red values redMin, redMax, greenMin, greenMax
+
   UVariable * varPoolImg;
-  /// pointer to limiting red values redMin, redMax, greenMin, greenMax
+  UVariable * varLeft;
+  UVariable * varWhite;
+  UVariable * varErrThresh;
 };
 
 
