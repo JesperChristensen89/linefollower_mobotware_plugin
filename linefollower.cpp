@@ -22,6 +22,7 @@ bool err = false;
 
 Control control;
 
+
 void LineFollower::errorMatch(int im, int i)
 {
    
@@ -29,12 +30,14 @@ void LineFollower::errorMatch(int im, int i)
     {
         // match prev contour with current
         double match = matchShapes(contours[i],contour_prev[0],1,0.0);
-
+  
+	printf("Match: %f",match);
+	
         if (match > 10)
         {
             endOfLine = endOfLine + 1;
             
-            err = true;
+            //err = true;
 
             printf("** Match error **");
 
@@ -67,7 +70,7 @@ void LineFollower::errorContour(int im)
         {
             endOfLine = endOfLine + 1;
 
-            err = true;
+            //err = true;
             
             printf("** Contour error **");
             
@@ -90,6 +93,7 @@ bool LineFollower::start(Mat imgCV, UART uart, bool left, bool white, int errThr
     Rect roi = Rect(10,imgCV.rows-60, imgCV.cols-20, imgCV.rows/12);
     Mat img_roi = imgCV(roi);
     
+    
     // convert to gray
     Mat img_gray;
     //cvtColor(img_roi,img_gray,COLOR_RGB2GRAY);
@@ -98,6 +102,7 @@ bool LineFollower::start(Mat imgCV, UART uart, bool left, bool white, int errThr
     Mat img_blur;
     GaussianBlur(img_roi,img_blur, Size(9,9),2);
 
+    
     // threshold
     Mat img_thresh;
     
@@ -105,21 +110,25 @@ bool LineFollower::start(Mat imgCV, UART uart, bool left, bool white, int errThr
     
     threshold(img_blur,img_thresh,0,255, threshType);
       
+    
     // Opening
     Mat kernel(5,5, CV_8UC1, 1);
     Mat img_open;
     
-    morphologyEx(img_thresh,img_open,2, kernel);
+    //morphologyEx(img_thresh,img_open,2, kernel);
     
     // find contours
     vector<Vec4i> hierarchy;
      
-    findContours(img_open,contours,hierarchy,CV_RETR_LIST,CV_CHAIN_APPROX_SIMPLE);
+    
+    
+    findContours(img_thresh,contours,hierarchy,CV_RETR_LIST,CV_CHAIN_APPROX_SIMPLE);
        
     vector<Rect> r;
     vector<Point> leftEdge;
     
     Point midRect;
+    
     
     k = 0;
     
@@ -159,11 +168,13 @@ bool LineFollower::start(Mat imgCV, UART uart, bool left, bool white, int errThr
 	errorMatch(imgNumber, i);
 	
       }
+
     }
     
+
     // if k = 0 no contour was found -> error
     errorContour(imgNumber);
-    
+
     // error routine
     if (endOfLine == errThresh)
     {
@@ -172,6 +183,10 @@ bool LineFollower::start(Mat imgCV, UART uart, bool left, bool white, int errThr
 	
 	uart.setMissionStart(false);
 	uart.send((char *)"998\n");
+	
+	control.reset();
+	endOfLine = 0;
+	
 	return false;
 	
 	//TODO stop run!!
@@ -213,13 +228,14 @@ bool LineFollower::start(Mat imgCV, UART uart, bool left, bool white, int errThr
     }
     
     
-    
-    
     // send calculated angle to regbot
     
     char angleStr[10];
     snprintf (angleStr,10,"%d\n",angle);
     uart.send(angleStr);
+    
+    printf("Angle: %s", angleStr);
+
     
     imgNumber += 1;
     

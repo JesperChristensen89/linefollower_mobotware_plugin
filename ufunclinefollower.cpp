@@ -35,25 +35,27 @@
 #include <urob4/uresposehist.h>
 //#include <../libs/eigen3/Eigen/src/Eigen2Support/Geometry/Translation.h>
 #include <highgui.h>
-#include <time.h>
+//#include <time.h>
 #include "opencv2/imgproc/imgproc.hpp"
-//#include <opencv2/imgcodecs.hpp>
 #include <pthread.h>
 
-using namespace cv;
-
 UART uart;
-bool isRegBotRunning;
+LineFollower linefollower;
+
+bool isRegBotRunning = true;
+bool firstRun = true;
 
   
 void *uartReceiver(void * threadid)
 {
 
-  while (isRegBotRunning)
+  while (not uart.getMissionStart())
   {
     uart.receive();
   }
 
+  printf("closing thread\n");
+  
   pthread_exit(NULL);
   
     
@@ -72,7 +74,7 @@ class UFuncLineFollower : public UFunctionCamBase
   
 public:
   
-  LineFollower linefollower;
+  
 
  
   
@@ -88,16 +90,20 @@ public:
     uart.init();
     
     uart.send((char *)"M=8\n");
+    uart.send((char *)"i=1\n");
+    
+    
     
     int threadOK;
     
     pthread_t receiverThread;
+    /*
     threadOK = pthread_create(&receiverThread, NULL, uartReceiver, (void*)&receiverThread);
     if (threadOK != 0)
     {
       exit(EXIT_FAILURE);
     }
-    
+    */
   };
   /**
   Destructor - to delete the resource (etc) when finished */
@@ -118,6 +124,7 @@ public:
     int camDevice = -1;
     bool imgPoolIsSet = false;
     int imgPoolNum = -1;
+    bool stopRegbot;
     UImage * img = (UImage *)extra;
     USmlTag tag;
     UCamPush * cam = NULL;
@@ -131,6 +138,7 @@ public:
     // the help value is ignored, e.g. if help="bark", then
     // the value "bark" will be in the 'helpValue' string.
     ask4help = msg->tag.getAttValue("help", val, MVL);
+    stopRegbot = msg->tag.getAttValue("stop",val,MVL);
     if (not ask4help)
     { // get all other parameters
       msg->tag.getAttValueInt("device", &camDevice);
@@ -150,7 +158,10 @@ public:
       sendText("img=X             Get image from image pool - else take new image\n");
       sendText("white             Will find white lines (def is black)\n");
       sendText("left		  Will make left turns (def is right)\n");
-      sendText("error=X		  sets a threshold on how many errors the robot can make before stopping - if it fails during turns, this variable probably needs to go up! [default = 4]\n");
+      sendText("error=X		  sets a threshold on how many errors the robot\n"); 
+      sendText("                  can make before stopping - if it fails during\n");
+      sendText("                  turns, this variable probably needs to go up!\n");
+      sendText("                  [default = 4]\n");
       sendText("smrcl             Format the reply for MRC (<vision vis1=\"x.x\" vis2=\"y.y\" .../>\n");
       sendText("help              This message\n");
       sendText("See also: var linefollower for other parameters and results\n");
@@ -159,12 +170,17 @@ public:
       result = true;
      
     }
+    else if (stopRegbot)
+    {
+      uart.send((char *)"998\n");
+    }
     else
     { 
       
 	
 	if (imgPoolIsSet)
-        { // take image from image pool
+        { 
+	  // take image from image pool
           img = imgPool->getImage(imgPoolNum, false);
           result = (img != NULL);
           if (result and camDevice < 0)
@@ -176,14 +192,18 @@ public:
             result = (cam != NULL);
           }
         }
+        
 	else if (img != NULL)
-      { // we have an image, so just camera is needed
+      { 
+	// we have an image, so just camera is needed
         camDevice = img->camDevice;
         cam = camPool->getCam(camDevice);
         result = (cam != NULL);
       }
+      
       else
-      { // get new image from a camera and store in first imagepool number for ball images
+      { 
+	// get new image from a camera and store in first imagepool number for ball images
         img = imgPool->getImage(varPoolImg->getInt(), true);
         result = getCamAndRawImage(&cam,        // result camera           out
                                   &img,        // result image            out
@@ -193,23 +213,43 @@ public:
         if (result)
           result = (img != NULL and cam != NULL);
       }
+      
       // camera and image is now available
       // time to kick some ass
+      
       if (result)
-      { // there is an image, make the required ball analysis
+      { 
+	// there is an image, make the required analysis
 	
-
-	if (uart.getMissionStart())
+	//if (uart.getMissionStart())
 	{
-	    
+	 
 	  img->toBW(img);
       
 	  cv::Mat imgCV = cv::cvarrToMat(img->cvArr());
 	  
-	  isRegBotRunning = linefollower.start(imgCV, uart, left,white,errThresh);
-	}
+
+	  try
+	  {
+	    isRegBotRunning = linefollower.start(imgCV, uart, left,white,errThresh);
+	  }
+	  catch(int val)
+	  {
+	    printf("Failed on linefollower!!\n");
+	  }
 	  
-	//uart.send((char *)"998\n");
+	}
+	//else
+	{
+	  if (firstRun)
+	  {
+	    uart.send((char *)"start\n");
+	    printf("Run settings: white:%d, left:%d, errThresh:%d\n",white,left,errThresh);
+	    firstRun = false;
+	  }
+	}
+	
+	  
 	
       }
       else
@@ -239,19 +279,15 @@ protected:
   void createBaseVar()
   {
     varPoolImg  = addVar("poolImg", 45.0, "d", "(r/w) first image pool number to use");
-    //varLeft     = addVar("left", false, "b", "turn direction");
-    //varWhite    = addVar("white", false, "b", "Line color to follow");
-    //varErrThresh= addVar("errThresh", 4, "i", "Errors to make before exiting");
+    //varLeft     = addVar("left", 0.0, "b", "turn direction");
+    //varWhite    = addVar("white", 0.0, "b", "Line color to follow");
+    //varErrThresh= addVar("errThresh", 4.0, "i", "Errors to make before exiting");
     
   }
   
 
   //
 private:
-  
-  int imgSizeH;
-  /// size of source image in pixels
-  int imgSizeW;
 
   UVariable * varPoolImg;
   UVariable * varLeft;
