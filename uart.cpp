@@ -88,13 +88,15 @@ void UART::receive()
 
                 char* str = rx_buffer;
                 
-                printf("%s",str);
+                printf("%s\n",str);
 
+		/*
                 if (strncmp(str,"start\n",6)==0)
                 {
                     missionStart = true;
                     printf("Starting the mission!\n");
                 }
+                */
 
             }
         }

@@ -10,7 +10,7 @@ void Control::reset()
     integral = 0;
 }
 
-int Control::regulator(int edge, int midImg)
+int Control::angleRegulator(int edge, int midImg)
 {
        
         
